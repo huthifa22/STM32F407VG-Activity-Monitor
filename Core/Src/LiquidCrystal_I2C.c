@@ -2,7 +2,7 @@
 
 void LiquidCrystal_I2C_Init(LiquidCrystal_I2C_HandleTypeDef *lcd, I2C_HandleTypeDef *hi2c, uint8_t address, uint8_t cols, uint8_t rows) {
     lcd->hi2c = hi2c;
-    lcd->Address = address << 1; // I2C address shifted for STM32
+    lcd->Address = address << 1;
     lcd->Cols = cols;
     lcd->Rows = rows;
     lcd->BacklightVal = LCD_BACKLIGHT;
@@ -18,7 +18,7 @@ void LiquidCrystal_I2C_Begin(LiquidCrystal_I2C_HandleTypeDef *lcd, uint8_t cols,
 
     HAL_Delay(50); // Wait for >40ms
 
-    LiquidCrystal_I2C_ExpanderWrite(lcd, lcd->BacklightVal); // Reset expander and turn backlight on
+    LiquidCrystal_I2C_ExpanderWrite(lcd, lcd->BacklightVal);
     HAL_Delay(1000);
 
     // Initialization sequence
