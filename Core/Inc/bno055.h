@@ -2,10 +2,10 @@
 #define BNO055_H_
 
 #ifdef __cplusplus
-  extern "C" {
+extern "C" {
 #endif
-// #define FREERTOS_ENABLED true
 
+#include "stm32f4xx_hal.h"  // Include the main HAL header file
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -16,7 +16,7 @@
 
 #define BNO055_I2C_ADDR_HI 0x29
 #define BNO055_I2C_ADDR_LO 0x28
-#define BNO055_I2C_ADDR    BNO055_I2C_ADDR_HI
+#define BNO055_I2C_ADDR    BNO055_I2C_ADDR_LO
 
 #define BNO055_READ_TIMEOUT 100
 #define BNO055_WRITE_TIMEOUT 10
@@ -304,6 +304,7 @@ bno055_vector_t bno055_getVectorQuaternion();
 void bno055_setAxisMap(bno055_axis_map_t axis);
 
 #ifdef __cplusplus
-  }
+}
 #endif
+
 #endif  // BNO055_H_

@@ -1,7 +1,6 @@
 "./Core/Src/I2CScanner.o"
 "./Core/Src/LiquidCrystal_I2C.o"
 "./Core/Src/bno055.o"
-"./Core/Src/com.o"
 "./Core/Src/main.o"
 "./Core/Src/stm32f4xx_hal_msp.o"
 "./Core/Src/stm32f4xx_it.o"

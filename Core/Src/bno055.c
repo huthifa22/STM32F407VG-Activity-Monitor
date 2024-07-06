@@ -1,12 +1,35 @@
 #include "bno055.h"
 #include <string.h>
 
+extern I2C_HandleTypeDef i2c;
+extern void Error_Handler(char *errorMessage, int lcdNumber);
+
 uint16_t accelScale = 100;
 uint16_t tempScale = 1;
 uint16_t angularRateScale = 16;
 uint16_t eulerScale = 16;
 uint16_t magScale = 16;
 uint16_t quaScale = (1<<14);    // 2^14
+
+void bno055_writeData(uint8_t reg, uint8_t data) {
+    uint8_t buffer[2] = {reg, data};
+    if (HAL_I2C_Master_Transmit(&i2c, BNO055_I2C_ADDR << 1, buffer, 2, HAL_MAX_DELAY) != HAL_OK) {
+        Error_Handler("BNO055 write failed", 1);
+    }
+}
+
+void bno055_readData(uint8_t reg, uint8_t *data, uint8_t len) {
+    if (HAL_I2C_Master_Transmit(&i2c, BNO055_I2C_ADDR << 1, &reg, 1, HAL_MAX_DELAY) != HAL_OK) {
+        Error_Handler("BNO055 read address failed", 1);
+    }
+    if (HAL_I2C_Master_Receive(&i2c, BNO055_I2C_ADDR << 1, data, len, HAL_MAX_DELAY) != HAL_OK) {
+        Error_Handler("BNO055 read data failed", 1);
+    }
+}
+
+void bno055_delay(int time) {
+    HAL_Delay(time);
+}
 
 void bno055_setPage(uint8_t page) { bno055_writeData(BNO055_PAGE_ID, page); }
 
@@ -126,7 +149,6 @@ bno055_calibration_state_t bno055_getCalibrationState() {
   return cal;
 }
 
-
 bno055_calibration_data_t bno055_getCalibrationData() {
   bno055_calibration_data_t calData;
   uint8_t buffer[22];
@@ -162,7 +184,7 @@ void bno055_setCalibrationData(bno055_calibration_data_t calData) {
   memcpy(buffer + 20, &calData.radius.mag, 2);
 
   for (uint8_t i=0; i < 22; i++) {
-    // TODO(oliv4945): create multibytes write
+    // TODO: create multibytes write
     bno055_writeData(BNO055_ACC_OFFSET_X_LSB+i, buffer[i]);
   }
 

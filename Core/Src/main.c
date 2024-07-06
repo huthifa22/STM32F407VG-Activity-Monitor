@@ -10,29 +10,7 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 
 I2C_HandleTypeDef i2c;
-LiquidCrystal_I2C_HandleTypeDef lcd;
-LiquidCrystal_I2C_HandleTypeDef lcd2;
-
-
-void bno055_writeData(uint8_t reg, uint8_t data) {
-    uint8_t buffer[2] = {reg, data};
-    if (HAL_I2C_Master_Transmit(&i2c, BNO055_I2C_ADDR << 1, buffer, 2, HAL_MAX_DELAY) != HAL_OK) {
-        Error_Handler("BNO055 write failed", 1);
-    }
-}
-
-void bno055_readData(uint8_t reg, uint8_t *data, uint8_t len) {
-    if (HAL_I2C_Master_Transmit(&i2c, BNO055_I2C_ADDR << 1, &reg, 1, HAL_MAX_DELAY) != HAL_OK) {
-        Error_Handler("BNO055 read address failed", 1);
-    }
-    if (HAL_I2C_Master_Receive(&i2c, BNO055_I2C_ADDR << 1, data, len, HAL_MAX_DELAY) != HAL_OK) {
-        Error_Handler("BNO055 read data failed", 1);
-    }
-}
-
-void bno055_delay(int time) {
-    HAL_Delay(time);
-}
+LiquidCrystal_I2C_HandleTypeDef lcd, lcd2;
 
 int main(void) {
     HAL_Init();
@@ -53,27 +31,50 @@ int main(void) {
     bno055_setOperationModeNDOF();
 
     char buffer[20];
-    bno055_vector_t euler;
+    bno055_vector_t euler, prev_euler = {0}, diff_euler = {0};
 
     while (1) {
 
         // Read Euler
         euler = bno055_getVectorEuler();
 
-        // Display Euler on LCD1
-        LiquidCrystal_I2C_Clear(&lcd);
-        LiquidCrystal_I2C_SetCursor(&lcd, 0, 0);
-        snprintf(buffer, sizeof(buffer), "Yaw: %.2f", euler.z);
-        LiquidCrystal_I2C_Print(&lcd, buffer);
+        // Check for changes
+        if (euler.z != prev_euler.z || euler.y != prev_euler.y || euler.x != prev_euler.x) {
+            // Calculate differences
+            diff_euler.z = euler.z - prev_euler.z;
+            diff_euler.y = euler.y - prev_euler.y;
+            diff_euler.x = euler.x - prev_euler.x;
 
-        LiquidCrystal_I2C_SetCursor(&lcd, 0, 1);
-        snprintf(buffer, sizeof(buffer), "Pitch: %.2f", euler.y);
-        LiquidCrystal_I2C_Print(&lcd, buffer);
+            // Display Euler on LCD1
+            LiquidCrystal_I2C_Clear(&lcd);
+            LiquidCrystal_I2C_SetCursor(&lcd, 0, 0);
+            snprintf(buffer, sizeof(buffer), "Yaw: %.2f", euler.z);
+            LiquidCrystal_I2C_Print(&lcd, buffer);
 
-        LiquidCrystal_I2C_SetCursor(&lcd, 0, 2);
-        snprintf(buffer, sizeof(buffer), "Roll: %.2f", euler.x);
-        LiquidCrystal_I2C_Print(&lcd, buffer);
+            LiquidCrystal_I2C_SetCursor(&lcd, 0, 1);
+            snprintf(buffer, sizeof(buffer), "Pitch: %.2f", euler.y);
+            LiquidCrystal_I2C_Print(&lcd, buffer);
 
+            LiquidCrystal_I2C_SetCursor(&lcd, 0, 2);
+            snprintf(buffer, sizeof(buffer), "Roll: %.2f", euler.x);
+            LiquidCrystal_I2C_Print(&lcd, buffer);
+
+            // Display differences on LCD2
+            LiquidCrystal_I2C_Clear(&lcd2);
+            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 0);
+            snprintf(buffer, sizeof(buffer), "Yaw Diff: %.2f", diff_euler.z);
+            LiquidCrystal_I2C_Print(&lcd2, buffer);
+
+            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 1);
+            snprintf(buffer, sizeof(buffer), "Pitch Diff: %.2f", diff_euler.y);
+            LiquidCrystal_I2C_Print(&lcd2, buffer);
+
+            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 2);
+            snprintf(buffer, sizeof(buffer), "Roll Diff: %.2f", diff_euler.x);
+            LiquidCrystal_I2C_Print(&lcd2, buffer);
+
+            prev_euler = euler;
+        }
     }
 }
 
@@ -82,13 +83,11 @@ void Error_Handler(char *errorMessage, int lcdNumber) {
         LiquidCrystal_I2C_Clear(&lcd);
         LiquidCrystal_I2C_SetCursor(&lcd, 0, 0);
         LiquidCrystal_I2C_Print(&lcd, errorMessage);
-
     } else if (lcdNumber == 2) {
         LiquidCrystal_I2C_Clear(&lcd2);
         LiquidCrystal_I2C_SetCursor(&lcd2, 0, 0);
         LiquidCrystal_I2C_Print(&lcd2, errorMessage);
     }
-
     HAL_Delay(2000);
     NVIC_SystemReset();
 }
