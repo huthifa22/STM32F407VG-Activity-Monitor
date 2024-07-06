@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-#include "stm32f4xx_hal.h"  // Include the main HAL header file
+#include "stm32f4xx_hal.h" 
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
