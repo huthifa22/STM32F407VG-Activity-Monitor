@@ -38,34 +38,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := Compass
+BUILD_ARTIFACT_NAME := ActivityMonitor
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-Compass.elf \
+ActivityMonitor.elf \
 
 MAP_FILES += \
-Compass.map \
+ActivityMonitor.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-Compass.list \
+ActivityMonitor.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: Compass.elf secondary-outputs
+main-build: ActivityMonitor.elf secondary-outputs
 
 # Tool invocations
-Compass.elf Compass.map: $(OBJS) $(USER_OBJS) C:\Users\huthi\OneDrive\Desktop\Cs\ WorkSpace\Spring\ 2024\ Classes\Embedded\ Systems\STMWorkSpace2\Compass\STM32F407VGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "Compass.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\huthi\OneDrive\Desktop\Cs WorkSpace\Spring 2024 Classes\Embedded Systems\STMWorkSpace2\Compass\STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Compass.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+ActivityMonitor.elf ActivityMonitor.map: $(OBJS) $(USER_OBJS) C:\Users\huthi\OneDrive\Desktop\Cs\ WorkSpace\Spring\ 2024\ Classes\Embedded\ Systems\STMWorkSpace2\Compass\STM32F407VGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "ActivityMonitor.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\huthi\OneDrive\Desktop\Cs WorkSpace\Spring 2024 Classes\Embedded Systems\STMWorkSpace2\Compass\STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="ActivityMonitor.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -74,14 +74,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-Compass.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "Compass.list"
+ActivityMonitor.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "ActivityMonitor.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) Compass.elf Compass.list Compass.map default.size.stdout
+	-$(RM) ActivityMonitor.elf ActivityMonitor.list ActivityMonitor.map default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)

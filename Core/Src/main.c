@@ -2,7 +2,12 @@
 #include "stdio.h"
 #include "LiquidCrystal_I2C.h"
 #include "bno055.h"
-#include <time.h>
+#include <math.h>
+
+// Thresholds
+#define TEMP_CHANGE_THRESHOLD 0.2
+#define SPEED_CHANGE_THRESHOLD 0.01
+#define ACCEL_CHANGE_THRESHOLD 0.2
 
 void SystemClock_Config(void);
 void Error_Handler(char *errorMessage, int lcdNumber);
@@ -31,50 +36,70 @@ int main(void) {
     bno055_setOperationModeNDOF();
 
     char buffer[20];
-    bno055_vector_t euler, prev_euler = {0}, diff_euler = {0};
+    bno055_vector_t accel, mag, gyro, euler, quaternion, linear_accel, gravity;
+    int8_t temp_raw;
+    float temperature_c, temperature_f;
+    float prev_temperature_f = 0.0, prev_speed = 0.0, prev_linear_accel_x = 0.0;
 
     while (1) {
 
-        // Read Euler
+        // Get Sensor Data
+        accel = bno055_getVectorAccelerometer();
+        mag = bno055_getVectorMagnetometer();
+        gyro = bno055_getVectorGyroscope();
         euler = bno055_getVectorEuler();
+        quaternion = bno055_getVectorQuaternion();
+        linear_accel = bno055_getVectorLinearAccel();
+        gravity = bno055_getVectorGravity();
+        temp_raw = bno055_getTemp();
 
-        // Check for changes
-        if (euler.z != prev_euler.z || euler.y != prev_euler.y || euler.x != prev_euler.x) {
-            // Calculate differences
-            diff_euler.z = euler.z - prev_euler.z;
-            diff_euler.y = euler.y - prev_euler.y;
-            diff_euler.x = euler.x - prev_euler.x;
+        // Convert to fahrenheit
+        temperature_c = (float)temp_raw;
+        temperature_f = (temperature_c * 9.0 / 5.0) + 32.0;
 
-            // Display Euler on LCD1
-            LiquidCrystal_I2C_Clear(&lcd);
-            LiquidCrystal_I2C_SetCursor(&lcd, 0, 0);
-            snprintf(buffer, sizeof(buffer), "Yaw: %.2f", euler.z);
-            LiquidCrystal_I2C_Print(&lcd, buffer);
-
-            LiquidCrystal_I2C_SetCursor(&lcd, 0, 1);
-            snprintf(buffer, sizeof(buffer), "Pitch: %.2f", euler.y);
-            LiquidCrystal_I2C_Print(&lcd, buffer);
-
-            LiquidCrystal_I2C_SetCursor(&lcd, 0, 2);
-            snprintf(buffer, sizeof(buffer), "Roll: %.2f", euler.x);
-            LiquidCrystal_I2C_Print(&lcd, buffer);
-
-            // Display differences on LCD2
-            LiquidCrystal_I2C_Clear(&lcd2);
-            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 0);
-            snprintf(buffer, sizeof(buffer), "Yaw Diff: %.2f", diff_euler.z);
-            LiquidCrystal_I2C_Print(&lcd2, buffer);
-
-            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 1);
-            snprintf(buffer, sizeof(buffer), "Pitch Diff: %.2f", diff_euler.y);
-            LiquidCrystal_I2C_Print(&lcd2, buffer);
-
-            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 2);
-            snprintf(buffer, sizeof(buffer), "Roll Diff: %.2f", diff_euler.x);
-            LiquidCrystal_I2C_Print(&lcd2, buffer);
-
-            prev_euler = euler;
+        // Current Activity
+        if (fabs(linear_accel.x - prev_linear_accel_x) < ACCEL_CHANGE_THRESHOLD && fabs(gravity.x - prev_linear_accel_x) < ACCEL_CHANGE_THRESHOLD) {
+            snprintf(buffer, sizeof(buffer), "Idle");
+        } else if (linear_accel.x >= 0.2 && linear_accel.x < 1.0) {
+            snprintf(buffer, sizeof(buffer), "Walking");
+        } else if (linear_accel.x >= 1.0 && linear_accel.x < 2.0) {
+            snprintf(buffer, sizeof(buffer), "Running");
+        } else if (linear_accel.x >= 2.0) {
+            snprintf(buffer, sizeof(buffer), "Stairs");
+        } else {
+            snprintf(buffer, sizeof(buffer), "Getting up");
         }
+
+        //update linear_accel
+        prev_linear_accel_x = linear_accel.x;
+
+        // Display activity on LCD1
+        LiquidCrystal_I2C_Clear(&lcd);
+        LiquidCrystal_I2C_SetCursor(&lcd, 0, 0);
+        LiquidCrystal_I2C_Print(&lcd, buffer);
+
+        // Non-negative speed
+        float speed = fabs(linear_accel.x);
+
+        // Update if speed has changed a lot or is very low
+        if (fabs(speed - prev_speed) > SPEED_CHANGE_THRESHOLD || speed < SPEED_CHANGE_THRESHOLD) {
+            if (speed < SPEED_CHANGE_THRESHOLD) {
+                speed = 0.0;
+            }
+            prev_speed = speed;
+            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 0);
+            snprintf(buffer, sizeof(buffer), "Your Speed: %.1f", speed);
+            LiquidCrystal_I2C_Print(&lcd2, buffer);
+        }
+
+        // Update temp if change is greater than threshold
+        if (fabs(temperature_f - prev_temperature_f) > TEMP_CHANGE_THRESHOLD) {
+            prev_temperature_f = temperature_f;
+            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 1);
+            snprintf(buffer, sizeof(buffer), "Temperature: %.1f F", temperature_f);
+            LiquidCrystal_I2C_Print(&lcd2, buffer);
+        }
+        HAL_Delay(600);
     }
 }
 
