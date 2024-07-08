@@ -3,16 +3,21 @@
 #include "LiquidCrystal_I2C.h"
 #include "bno055.h"
 #include <math.h>
+#include <string.h>
 
-// Thresholds
-#define TEMP_CHANGE_THRESHOLD 0.2
-#define SPEED_CHANGE_THRESHOLD 0.01
-#define ACCEL_CHANGE_THRESHOLD 0.2
+#define TEMP_CHANGE_THRESHOLD 0.1
+#define DEGREE_CHANGE_THRESHOLD 5.0
+#define ACCEL_CHANGE_THRESHOLD 0.15
+#define DECAY_FACTOR 0.7
 
 void SystemClock_Config(void);
 void Error_Handler(char *errorMessage, int lcdNumber);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
+float convertToFahrenheit(int8_t temp_c);
+void hardcodeCalibrationData();
+const char* getCompassDirection(float heading);
+float calculateHeading(bno055_vector_t mag);
 
 I2C_HandleTypeDef i2c;
 LiquidCrystal_I2C_HandleTypeDef lcd, lcd2;
@@ -33,13 +38,17 @@ int main(void) {
 
     // Initialize BNO055
     bno055_setup();
+    hardcodeCalibrationData();
     bno055_setOperationModeNDOF();
 
     char buffer[20];
     bno055_vector_t accel, mag, gyro, euler, quaternion, linear_accel, gravity;
     int8_t temp_raw;
-    float temperature_c, temperature_f;
-    float prev_temperature_f = 0.0, prev_speed = 0.0, prev_linear_accel_x = 0.0;
+    float temperature_f, prev_temperature_f = 0.0;
+    float displayed_acceleration = 0.0;
+    float heading, previous_heading = -1.0;
+    const char* direction;
+    const char* previousDirection = "";
 
     while (1) {
 
@@ -53,53 +62,55 @@ int main(void) {
         gravity = bno055_getVectorGravity();
         temp_raw = bno055_getTemp();
 
-        // Convert to fahrenheit
-        temperature_c = (float)temp_raw;
-        temperature_f = (temperature_c * 9.0 / 5.0) + 32.0;
-
-        // Current Activity
-        if (fabs(linear_accel.x - prev_linear_accel_x) < ACCEL_CHANGE_THRESHOLD && fabs(gravity.x - prev_linear_accel_x) < ACCEL_CHANGE_THRESHOLD) {
-            snprintf(buffer, sizeof(buffer), "Idle");
-        } else if (linear_accel.x >= 0.2 && linear_accel.x < 1.0) {
-            snprintf(buffer, sizeof(buffer), "Walking");
-        } else if (linear_accel.x >= 1.0 && linear_accel.x < 2.0) {
-            snprintf(buffer, sizeof(buffer), "Running");
-        } else if (linear_accel.x >= 2.0) {
-            snprintf(buffer, sizeof(buffer), "Stairs");
+        // If acceleration change is greater than threshold then display it
+        if (fabs(linear_accel.y) > ACCEL_CHANGE_THRESHOLD) {
+            displayed_acceleration = fabs(linear_accel.y);
         } else {
-            snprintf(buffer, sizeof(buffer), "Getting up");
-        }
-
-        //update linear_accel
-        prev_linear_accel_x = linear_accel.x;
-
-        // Display activity on LCD1
-        LiquidCrystal_I2C_Clear(&lcd);
-        LiquidCrystal_I2C_SetCursor(&lcd, 0, 0);
-        LiquidCrystal_I2C_Print(&lcd, buffer);
-
-        // Non-negative speed
-        float speed = fabs(linear_accel.x);
-
-        // Update if speed has changed a lot or is very low
-        if (fabs(speed - prev_speed) > SPEED_CHANGE_THRESHOLD || speed < SPEED_CHANGE_THRESHOLD) {
-            if (speed < SPEED_CHANGE_THRESHOLD) {
-                speed = 0.0;
+            // Slow down rate
+            displayed_acceleration *= DECAY_FACTOR;
+            if (displayed_acceleration < 0.3) {
+                displayed_acceleration = 0.0;
             }
-            prev_speed = speed;
-            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 0);
-            snprintf(buffer, sizeof(buffer), "Your Speed: %.1f", speed);
-            LiquidCrystal_I2C_Print(&lcd2, buffer);
         }
 
-        // Update temp if change is greater than threshold
+        // Display Acceleration
+        LiquidCrystal_I2C_SetCursor(&lcd2, 0, 0);
+        snprintf(buffer, sizeof(buffer), "Speed: %.1f", displayed_acceleration);
+        LiquidCrystal_I2C_Print(&lcd2, buffer);
+
+        // Convert Temperature from C to F
+        temperature_f = convertToFahrenheit(temp_raw);
+
+        // Update temperature if change is greater than threshold
         if (fabs(temperature_f - prev_temperature_f) > TEMP_CHANGE_THRESHOLD) {
             prev_temperature_f = temperature_f;
             LiquidCrystal_I2C_SetCursor(&lcd2, 0, 1);
-            snprintf(buffer, sizeof(buffer), "Temperature: %.1f F", temperature_f);
+            snprintf(buffer, sizeof(buffer), "Temp: %.1f %cF", temperature_f, 223); //223 is char for degrees
             LiquidCrystal_I2C_Print(&lcd2, buffer);
         }
-        HAL_Delay(600);
+
+        // Calculate direction using magnetometer and display it
+        heading = calculateHeading(mag);
+        if (heading == -0.0) heading = 0.0;
+        direction = getCompassDirection(heading);
+
+        // Update direction if it changes
+        if (strcmp(direction, previousDirection) != 0) {
+            previousDirection = direction;
+            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 2);
+            snprintf(buffer, sizeof(buffer), "Heading: %s          ", direction);
+            LiquidCrystal_I2C_Print(&lcd2, buffer);
+        }
+
+        // Update angle if change is greater than threshold
+        if (fabs(heading - previous_heading) >= DEGREE_CHANGE_THRESHOLD) {
+            previous_heading = heading;
+            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 3);
+            snprintf(buffer, sizeof(buffer), "Degrees: %.f%c    ", heading, 223); //223 is char for degrees
+            LiquidCrystal_I2C_Print(&lcd2, buffer);
+        }
+
+        HAL_Delay(300);
     }
 }
 
@@ -115,6 +126,63 @@ void Error_Handler(char *errorMessage, int lcdNumber) {
     }
     HAL_Delay(2000);
     NVIC_SystemReset();
+}
+
+// Data after calibrating the IMU in current environment
+// bno055Calibrate.c can be used to retrieve new calibration
+void hardcodeCalibrationData() {
+    bno055_calibration_data_t calData;
+
+    calData.offset.accel.x = -29;
+    calData.offset.accel.y = -16;
+    calData.offset.accel.z = -31;
+    calData.offset.mag.x = 79;
+    calData.offset.mag.y = -150;
+    calData.offset.mag.z = 80;
+    calData.offset.gyro.x = -2;
+    calData.offset.gyro.y = 0;
+    calData.offset.gyro.z = 0;
+    calData.radius.accel = 1000;
+    calData.radius.mag = 814;
+
+    bno055_setCalibrationData(calData);
+}
+
+//From Celsius to Fahrenheit
+float convertToFahrenheit(int8_t temp_c) {
+    return (temp_c * 9.0 / 5.0) + 32.0;
+}
+
+// Retrieve Direction
+const char* getCompassDirection(float heading) {
+    if ((heading >= 337.5) || (heading < 22.5)) {
+        return "North";
+    } else if (heading < 67.5) {
+        return "NorthEast";
+    } else if (heading < 112.5) {
+        return "East";
+    } else if (heading < 157.5) {
+        return "SouthEast";
+    } else if (heading < 202.5) {
+        return "South";
+    } else if (heading < 247.5) {
+        return "SouthWest";
+    } else if (heading < 292.5) {
+        return "West";
+    } else {
+        return "NorthWest";
+    }
+}
+
+// Calculate heading angle in degrees from magnetometer
+float calculateHeading(bno055_vector_t mag) {
+
+    // Since IMU is turned 90 deg to the right we adjust
+    float heading = atan2(-mag.x, mag.y) * 180 / M_PI;
+    if (heading < 0) {
+        heading += 360;
+    }
+    return heading;
 }
 
 // I2C Configuration
