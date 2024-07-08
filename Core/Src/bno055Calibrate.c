@@ -52,6 +52,7 @@ int checkAndDisplayCalibrationStatus() {
 
         return 1;
     }
+    
     return 0;
 }
 
