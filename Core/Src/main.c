@@ -10,15 +10,18 @@
 #define ACCEL_CHANGE_THRESHOLD 0.06
 #define DECAY_FACTOR 0.7
 
-#define IDLE_EULER_CHANGE_THRESHOLD 0.1
-#define IDLE_GRAVITY_CHANGE_THRESHOLD 0.1
-#define IDLE_DEBOUNCE_THRESHOLD 1
+#define IDLE_EULER_CHANGE_THRESHOLD 0.09
+#define IDLE_GRAVITY_CHANGE_THRESHOLD 0.09
+#define IDLE_DEBOUNCE_THRESHOLD 2
 
-#define MOVING_EULER_CHANGE_THRESHOLD 0.15
-#define MOVING_GRAVITY_CHANGE_THRESHOLD 0.15
-#define MOVING_DEBOUNCE_THRESHOLD 2
+#define SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD 0.11
+#define SLIGHTLY_MOVING_DEBOUNCE_THRESHOLD 1
 
-#define WALKING_ACCEL_CHANGE_THRESHOLD 0.8
+#define MOVING_EULER_CHANGE_THRESHOLD 0.5
+#define MOVING_GRAVITY_CHANGE_THRESHOLD 1.5
+#define MOVING_DEBOUNCE_THRESHOLD 3
+
+#define WALKING_ACCEL_CHANGE_THRESHOLD 0.7
 #define WALKING_DEBOUNCE_THRESHOLD 2
 
 char buffer[20];
@@ -31,7 +34,7 @@ float heading, previous_heading = -1.0;
 float degree_difference;
 const char* direction;
 const char* previousDirection = "";
-int idleDebounceCounter = 0, movingDebounceCounter, walkingDebounceCounter = 0 ;
+int idleDebounceCounter = 0, slightlyMovingDebounceCounter = 0, movingDebounceCounter = 0, walkingDebounceCounter = 0;
 
 void SystemClock_Config(void);
 void Error_Handler(char *errorMessage, int lcdNumber);
@@ -42,9 +45,11 @@ void hardcodeCalibrationData();
 const char* getCompassDirection(float heading);
 float calculateHeading(bno055_vector_t mag);
 int isUserIdle(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity);
-int isUserMoving(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity);
+int isUserSlightlyMoving(bno055_vector_t euler, bno055_vector_t prev_euler);
+int isUserMoving(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity, bno055_vector_t gyro);
 int isUserWalking(bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel);
-void userMovementStatus(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity, bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel);
+void userMovementStatus(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity,
+						bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gyro);
 
 I2C_HandleTypeDef i2c;
 LiquidCrystal_I2C_HandleTypeDef lcd, lcd2;
@@ -96,14 +101,14 @@ int main(void) {
         gravity = bno055_getVectorGravity();
         temp_raw = bno055_getTemp();
 
-        //Debug
+        // Debug
         printf("Euler: x=%.2f, y=%.2f, z=%.2f\n", euler.x, euler.y, euler.z);
         printf("Gravity: x=%.2f, y=%.2f, z=%.2f\n", gravity.x, gravity.y, gravity.z);
 
-        //update movement
-        userMovementStatus(euler, prev_euler, gravity, prev_gravity, linear_accel, prev_linear_accel);
+        // Update movement
+        userMovementStatus(euler, prev_euler, gravity, prev_gravity, linear_accel, prev_linear_accel, gyro);
 
-        //update prev values
+        // Update previous values
         prev_euler = euler;
         prev_gravity = gravity;
         prev_linear_accel = linear_accel;
@@ -236,23 +241,15 @@ float calculateHeading(bno055_vector_t mag) {
     return heading;
 }
 
-//Movement Status - idle, moving, walking
+// Movement Status - idle, slightly moving, moving, walking
 void userMovementStatus(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity,
-						bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel) {
-    // Check if the user is idle
-    if (isUserIdle(euler, prev_euler, gravity, prev_gravity)) {
-        idleDebounceCounter++;
-        movingDebounceCounter = 0;
-        walkingDebounceCounter = 0;
-        if (idleDebounceCounter >= IDLE_DEBOUNCE_THRESHOLD) {
-            LiquidCrystal_I2C_SetCursor(&lcd, 10, 0);
-            LiquidCrystal_I2C_Print(&lcd, "Idle      ");
-        }
-    }
+                        bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gyro) {
+
     // Check if the user is walking
-    else if (isUserWalking(linear_accel, prev_linear_accel)) {
+    if (isUserWalking(linear_accel, prev_linear_accel)) {
         walkingDebounceCounter++;
         idleDebounceCounter = 0;
+        slightlyMovingDebounceCounter = 0;
         movingDebounceCounter = 0;
         if (walkingDebounceCounter >= WALKING_DEBOUNCE_THRESHOLD) {
             LiquidCrystal_I2C_SetCursor(&lcd, 10, 0);
@@ -260,13 +257,36 @@ void userMovementStatus(bno055_vector_t euler, bno055_vector_t prev_euler, bno05
         }
     }
     // Check if the user is moving
-    else if (isUserMoving(euler, prev_euler, gravity, prev_gravity)) {
+    else if (isUserMoving(euler, prev_euler, gravity, prev_gravity, gyro)) {
         movingDebounceCounter++;
         idleDebounceCounter = 0;
+        slightlyMovingDebounceCounter = 0;
         walkingDebounceCounter = 0;
         if (movingDebounceCounter >= MOVING_DEBOUNCE_THRESHOLD) {
             LiquidCrystal_I2C_SetCursor(&lcd, 10, 0);
             LiquidCrystal_I2C_Print(&lcd, "Moving    ");
+        }
+    }
+    // Check if the user is slightly moving
+    else if (isUserSlightlyMoving(euler, prev_euler)) {
+        slightlyMovingDebounceCounter++;
+        idleDebounceCounter = 0;
+        movingDebounceCounter = 0;
+        walkingDebounceCounter = 0;
+        if (slightlyMovingDebounceCounter >= SLIGHTLY_MOVING_DEBOUNCE_THRESHOLD) {
+            LiquidCrystal_I2C_SetCursor(&lcd, 10, 0);
+            LiquidCrystal_I2C_Print(&lcd, "Slight    ");
+        }
+    }
+    // Check if the user is idle
+    else if (isUserIdle(euler, prev_euler, gravity, prev_gravity)) {
+        idleDebounceCounter++;
+        slightlyMovingDebounceCounter = 0;
+        movingDebounceCounter = 0;
+        walkingDebounceCounter = 0;
+        if (idleDebounceCounter >= IDLE_DEBOUNCE_THRESHOLD) {
+            LiquidCrystal_I2C_SetCursor(&lcd, 10, 0);
+            LiquidCrystal_I2C_Print(&lcd, "Idle      ");
         }
     }
 }
@@ -288,8 +308,19 @@ int isUserIdle(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_
             gravity_change_z < IDLE_GRAVITY_CHANGE_THRESHOLD);
 }
 
-// Check if user is moving using euler and gravity
-int isUserMoving(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity) {
+// Check if user is slightly moving using euler
+int isUserSlightlyMoving(bno055_vector_t euler, bno055_vector_t prev_euler) {
+    float euler_change_x = fabs(euler.x - prev_euler.x);
+    float euler_change_y = fabs(euler.y - prev_euler.y);
+    float euler_change_z = fabs(euler.z - prev_euler.z);
+
+    return (euler_change_x >= SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD ||
+            euler_change_y >= SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD ||
+            euler_change_z >= SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD);
+}
+
+// Check if user is moving using euler, gravity, and gyro
+int isUserMoving(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity, bno055_vector_t gyro) {
     float euler_change_x = fabs(euler.x - prev_euler.x);
     float euler_change_y = fabs(euler.y - prev_euler.y);
     float euler_change_z = fabs(euler.z - prev_euler.z);
@@ -297,12 +328,16 @@ int isUserMoving(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vecto
     float gravity_change_y = fabs(gravity.y - prev_gravity.y);
     float gravity_change_z = fabs(gravity.z - prev_gravity.z);
 
+    // Magnitude of 3D angular velocity vector: |gyro| = √(gyro.x^2 + gyro.y^2 + gyro.z^2)
+    float gyro_magnitude = sqrt((gyro.x * gyro.x) + (gyro.y * gyro.y) + (gyro.z * gyro.z));
+
     return (euler_change_x >= MOVING_EULER_CHANGE_THRESHOLD ||
             euler_change_y >= MOVING_EULER_CHANGE_THRESHOLD ||
             euler_change_z >= MOVING_EULER_CHANGE_THRESHOLD ||
             gravity_change_x >= MOVING_GRAVITY_CHANGE_THRESHOLD ||
             gravity_change_y >= MOVING_GRAVITY_CHANGE_THRESHOLD ||
-            gravity_change_z >= MOVING_GRAVITY_CHANGE_THRESHOLD);
+            gravity_change_z >= MOVING_GRAVITY_CHANGE_THRESHOLD ||
+            gyro_magnitude > MOVING_GRAVITY_CHANGE_THRESHOLD);
 }
 
 // Check if user is walking using magnitude of 2d vector
@@ -310,7 +345,7 @@ int isUserWalking(bno055_vector_t linear_accel, bno055_vector_t prev_linear_acce
     float accel_change_x = fabs(linear_accel.x - prev_linear_accel.x);
     float accel_change_y = fabs(linear_accel.y - prev_linear_accel.y);
 
-    //Magnitude of 2d vector : |a| = √(accel_changeX^2 + accel_changeY^2)
+    // Magnitude of 2d vector : |a| = √(accel_changeX^2 + accel_changeY^2)
     float accel_change_magnitude = sqrt((accel_change_x * accel_change_x) + (accel_change_y * accel_change_y));
 
     return (accel_change_magnitude >= WALKING_ACCEL_CHANGE_THRESHOLD);
