@@ -17,6 +17,7 @@ https://www.amazon.com/GeeekPi-Interface-Backlight-Raspberry-Electrical/dp/B0BCW
 - Breadboard
 - Jumper wires
 - Resistors: 100 ohms
+- Battery Pack
 
 
 # Connections
@@ -26,4 +27,6 @@ https://www.amazon.com/GeeekPi-Interface-Backlight-Raspberry-Electrical/dp/B0BCW
 - LCD1 (0x27): Connected via I2C1
 - LCD2 (0x20): Connected via I2C1
 - BNO055 IMU Sensor (0x28) : Connected via I2C1
+
+![SC1](https://github.com/huthifa22/STM32F407VG-Activity-Monitor/assets/105901978/afffdd73-1f6f-4637-aa46-a9d8acf6c655)
 
