@@ -6,7 +6,7 @@
 #include <string.h>
 
 #define TEMP_CHANGE_THRESHOLD 0.1
-#define DEGREE_CHANGE_THRESHOLD 4.0
+#define DEGREE_CHANGE_THRESHOLD 0
 #define ACCEL_CHANGE_THRESHOLD 0.06
 #define DECAY_FACTOR 0.7
 
@@ -39,6 +39,7 @@ float degree_difference;
 const char* direction;
 const char* previousDirection = "";
 int idleDebounceCounter = 0, slightlyMovingDebounceCounter = 0, movingDebounceCounter = 0, walkingDebounceCounter = 0;
+int hasCalculatedIdleAngle = 0;
 
 void SystemClock_Config(void);
 void Error_Handler(char *errorMessage, int lcdNumber);
@@ -86,6 +87,7 @@ int main(void) {
         printf("\t\t\t\tGravity: x=%.4f, y=%.4f, z=%.4f\n", gravity.x, gravity.y, gravity.z);
         printf("\t\t\t\t\tAccel: x=%.4f, y=%.4f, z=%.4f\n", accel.x, accel.y, accel.z);
         printf("\t\t\t\t\t\tGyro: x=%.4f, y=%.4f, z=%.4f\n", gyro.x, gyro.y, gyro.z);
+        printf("\t\t\t\t\t\tMagnetometer: x=%.4f, y=%.4f, z=%.4f\n", mag.x, mag.y, mag.z);
 
         // Display movement
         displayMovement(euler, prev_euler, gravity, prev_gravity, linear_accel, prev_linear_accel, gyro);
@@ -234,21 +236,41 @@ void displayHeadingAndAngle(LiquidCrystal_I2C_HandleTypeDef *lcd2, bno055_vector
         degree_difference = 360.0 - degree_difference;
     }
 
-    // Update direction and angle if degree difference is greater than threshold
-    if (degree_difference > DEGREE_CHANGE_THRESHOLD) {
-        if (strcmp(direction, *previousDirection) != 0) {
-            *previousDirection = direction;
+    if (heading == -0.0) heading = 0.0;
+
+    // Check if the user is idle to capture the angle 1 time to stop fluctuations while not moving
+    if (isUserIdle(euler, prev_euler, gravity, prev_gravity)) {
+        if (!hasCalculatedIdleAngle) {
+            hasCalculatedIdleAngle = 1;
             LiquidCrystal_I2C_SetCursor(lcd2, 0, 2);
             snprintf(buffer, 20, "Heading: %s          ", direction);
             LiquidCrystal_I2C_Print(lcd2, buffer);
-        }
 
-        *previous_heading = heading;
-        LiquidCrystal_I2C_SetCursor(lcd2, 0, 3);
-        snprintf(buffer, 20, "Angle: %.f%c    ", heading, 223); // 223 is char for degrees
-        LiquidCrystal_I2C_Print(lcd2, buffer);
+            *previous_heading = heading;
+            LiquidCrystal_I2C_SetCursor(lcd2, 0, 3);
+            snprintf(buffer, 20, "Angle: %.f%c    ", heading, 223); // 223 is char for degrees
+            LiquidCrystal_I2C_Print(lcd2, buffer);
+        }
+    } else {
+        hasCalculatedIdleAngle = 0;
+
+        // Update direction and angle if degree difference is greater than threshold
+        if (degree_difference > DEGREE_CHANGE_THRESHOLD) {
+            if (strcmp(direction, *previousDirection) != 0) {
+                *previousDirection = direction;
+                LiquidCrystal_I2C_SetCursor(lcd2, 0, 2);
+                snprintf(buffer, 20, "Heading: %s          ", direction);
+                LiquidCrystal_I2C_Print(lcd2, buffer);
+            }
+
+            *previous_heading = heading;
+            LiquidCrystal_I2C_SetCursor(lcd2, 0, 3);
+            snprintf(buffer, 20, "Angle: %.f%c    ", heading, 223); // 223 is char for degrees
+            LiquidCrystal_I2C_Print(lcd2, buffer);
+        }
     }
 }
+
 
 const char* getCompassDirection(float heading) {
     if ((heading >= 337.5) || (heading < 22.5)) {
@@ -285,11 +307,12 @@ void displayMovement(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_v
                         bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gyro) {
 
     // Check if the user is walking
-	if (isUserWalking(linear_accel, prev_linear_accel, gravity, prev_gravity)) {
+    if (isUserWalking(linear_accel, prev_linear_accel, gravity, prev_gravity)) {
         walkingDebounceCounter++;
         idleDebounceCounter = 0;
         slightlyMovingDebounceCounter = 0;
         movingDebounceCounter = 0;
+        hasCalculatedIdleAngle = 0;
         if (walkingDebounceCounter >= WALKING_DEBOUNCE_THRESHOLD) {
             LiquidCrystal_I2C_SetCursor(&lcd, 10, 0);
             LiquidCrystal_I2C_Print(&lcd, "Walking   ");
@@ -301,6 +324,7 @@ void displayMovement(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_v
         idleDebounceCounter = 0;
         slightlyMovingDebounceCounter = 0;
         walkingDebounceCounter = 0;
+        hasCalculatedIdleAngle = 0;
         if (movingDebounceCounter >= MOVING_DEBOUNCE_THRESHOLD) {
             LiquidCrystal_I2C_SetCursor(&lcd, 10, 0);
             LiquidCrystal_I2C_Print(&lcd, "Moving    ");
@@ -312,6 +336,7 @@ void displayMovement(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_v
         idleDebounceCounter = 0;
         movingDebounceCounter = 0;
         walkingDebounceCounter = 0;
+        hasCalculatedIdleAngle = 0;
         if (slightlyMovingDebounceCounter >= SLIGHTLY_MOVING_DEBOUNCE_THRESHOLD) {
             LiquidCrystal_I2C_SetCursor(&lcd, 10, 0);
             LiquidCrystal_I2C_Print(&lcd, "Slight    ");
