@@ -10,20 +10,24 @@
 #define ACCEL_CHANGE_THRESHOLD 0.06
 #define DECAY_FACTOR 0.7
 
-#define IDLE_EULER_CHANGE_THRESHOLD 0.09
-#define IDLE_GRAVITY_CHANGE_THRESHOLD 0.09
-#define IDLE_DEBOUNCE_THRESHOLD 2
+#define IDLE_EULER_CHANGE_THRESHOLD 0.06
+#define IDLE_GRAVITY_CHANGE_THRESHOLD 0.06
+#define IDLE_DEBOUNCE_THRESHOLD 1
 
-#define SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD 0.11
+#define SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD 0.08
 #define SLIGHTLY_MOVING_DEBOUNCE_THRESHOLD 1
 
-#define MOVING_EULER_CHANGE_THRESHOLD 0.5
-#define MOVING_GRAVITY_CHANGE_THRESHOLD 1.5
-#define MOVING_DEBOUNCE_THRESHOLD 3
+#define MOVING_EULER_CHANGE_THRESHOLD 0.3
+#define MOVING_GRAVITY_CHANGE_THRESHOLD 0.2
+#define MOVING_GYRO_CHANGE_THRESHOLD 0.2
+#define MOVING_DEBOUNCE_THRESHOLD 1
 
-#define WALKING_ACCEL_CHANGE_THRESHOLD 0.7
-#define WALKING_DEBOUNCE_THRESHOLD 2
+#define WALKING_ACCEL_X_CHANGE_THRESHOLD 0.5
+#define WALKING_GRAVITY_X_CHANGE_THRESHOLD 0.3
+#define WALKING_GRAVITY_Z_CHANGE_THRESHOLD 0.2
+#define WALKING_DEBOUNCE_THRESHOLD 1
 
+int stabilize_counter;
 char buffer[20];
 bno055_vector_t accel, mag, gyro, euler, linear_accel, gravity;
 bno055_vector_t prev_euler, prev_gravity, prev_linear_accel;
@@ -40,16 +44,20 @@ void SystemClock_Config(void);
 void Error_Handler(char *errorMessage, int lcdNumber);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
-float convertToFahrenheit(int8_t temp_c);
+void setUp(void);
 void hardcodeCalibrationData();
+void displaySpeed(LiquidCrystal_I2C_HandleTypeDef *lcd2, bno055_vector_t linear_accel, float *displayed_acceleration, char *buffer);
+void displayTemperature(LiquidCrystal_I2C_HandleTypeDef *lcd2, int8_t temp_raw, float *prev_temperature_f, char *buffer);
+float convertToFahrenheit(int8_t temp_c);
+void displayHeadingAndAngle(LiquidCrystal_I2C_HandleTypeDef *lcd2, bno055_vector_t mag, float *previous_heading, const char **previousDirection, char *buffer);
 const char* getCompassDirection(float heading);
 float calculateHeading(bno055_vector_t mag);
+void displayMovement(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity,
+						bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gyro);
 int isUserIdle(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity);
 int isUserSlightlyMoving(bno055_vector_t euler, bno055_vector_t prev_euler);
 int isUserMoving(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity, bno055_vector_t gyro);
-int isUserWalking(bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel);
-void userMovementStatus(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity,
-						bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gyro);
+int isUserWalking(bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gravity, bno055_vector_t prev_gravity);
 
 I2C_HandleTypeDef i2c;
 LiquidCrystal_I2C_HandleTypeDef lcd, lcd2;
@@ -60,35 +68,7 @@ int main(void) {
     MX_GPIO_Init();
     MX_I2C1_Init();
 
-    // Initialize LCD1 at 0x27
-    LiquidCrystal_I2C_Init(&lcd, &i2c, 0x27, 20, 4);
-    LiquidCrystal_I2C_Begin(&lcd, 20, 4, LCD_5x8DOTS);
-
-    // Initialize LCD2 at 0x20
-    LiquidCrystal_I2C_Init(&lcd2, &i2c, 0x20, 20, 4);
-    LiquidCrystal_I2C_Begin(&lcd2, 20, 4, LCD_5x8DOTS);
-
-    // Initialize BNO055
-    bno055_setup();
-    hardcodeCalibrationData();
-    bno055_setOperationModeNDOF();
-
-    // Initial Readings
-    accel = bno055_getVectorAccelerometer();
-    mag = bno055_getVectorMagnetometer();
-    gyro = bno055_getVectorGyroscope();
-    euler = bno055_getVectorEuler();
-    linear_accel = bno055_getVectorLinearAccel();
-    gravity = bno055_getVectorGravity();
-    temp_raw = bno055_getTemp();
-
-    // Initial Status
-    prev_euler = euler;
-    prev_gravity = gravity;
-    prev_linear_accel = accel;
-
-    LiquidCrystal_I2C_SetCursor(&lcd, 0, 0);
-    LiquidCrystal_I2C_Print(&lcd, "Movement: Gauging...");
+    setUp();
 
     while (1) {
 
@@ -102,71 +82,28 @@ int main(void) {
         temp_raw = bno055_getTemp();
 
         // Debug
-        printf("Euler: x=%.2f, y=%.2f, z=%.2f\n", euler.x, euler.y, euler.z);
-        printf("Gravity: x=%.2f, y=%.2f, z=%.2f\n", gravity.x, gravity.y, gravity.z);
+        printf("Euler: x=%.4f, y=%.4f, z=%.4f\n", euler.x, euler.y, euler.z);
+        printf("\t\t\t\tGravity: x=%.4f, y=%.4f, z=%.4f\n", gravity.x, gravity.y, gravity.z);
+        printf("\t\t\t\t\tAccel: x=%.4f, y=%.4f, z=%.4f\n", accel.x, accel.y, accel.z);
+        printf("\t\t\t\t\t\tGyro: x=%.4f, y=%.4f, z=%.4f\n", gyro.x, gyro.y, gyro.z);
 
-        // Update movement
-        userMovementStatus(euler, prev_euler, gravity, prev_gravity, linear_accel, prev_linear_accel, gyro);
+        // Display movement
+        displayMovement(euler, prev_euler, gravity, prev_gravity, linear_accel, prev_linear_accel, gyro);
+
+        // Display Speed
+        displaySpeed(&lcd2, linear_accel, &displayed_acceleration, buffer);
+
+        // Display Temperature
+        displayTemperature(&lcd2, temp_raw, &prev_temperature_f, buffer);
+
+        //Display Heading and Angle
+        displayHeadingAndAngle(&lcd2, mag, &previous_heading, &previousDirection, buffer);
 
         // Update previous values
         prev_euler = euler;
         prev_gravity = gravity;
         prev_linear_accel = linear_accel;
 
-        // If acceleration change is greater than threshold then display it
-        if (fabs(linear_accel.y) > ACCEL_CHANGE_THRESHOLD) {
-            displayed_acceleration = fabs(linear_accel.y);
-        } else {
-            // Slow down rate
-            displayed_acceleration *= DECAY_FACTOR;
-            if (displayed_acceleration < 0.3) {
-                displayed_acceleration = 0.0;
-            }
-        }
-
-        // Display Acceleration
-        LiquidCrystal_I2C_SetCursor(&lcd2, 0, 0);
-        snprintf(buffer, sizeof(buffer), "Speed: %.1f", displayed_acceleration);
-        LiquidCrystal_I2C_Print(&lcd2, buffer);
-
-        // Convert Temperature from C to F
-        temperature_f = convertToFahrenheit(temp_raw);
-
-        // Update temperature if change is greater than threshold
-        if (fabs(temperature_f - prev_temperature_f) > TEMP_CHANGE_THRESHOLD) {
-            prev_temperature_f = temperature_f;
-            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 1);
-            snprintf(buffer, sizeof(buffer), "Temp: %.1f %cF", temperature_f, 223); //223 is char for degrees
-            LiquidCrystal_I2C_Print(&lcd2, buffer);
-        }
-
-        // Calculate direction using magnetometer and display it
-        heading = calculateHeading(mag);
-        if (heading == -0.0) heading = 0.0;
-        direction = getCompassDirection(heading);
-
-        // Calculate the degree difference
-        degree_difference = fabs(heading - previous_heading);
-
-        // Angle wrap around check
-        if (degree_difference > 180.0) {
-            degree_difference = 360.0 - degree_difference;
-        }
-
-        // Update direction and angle if degree difference is greater than threshold
-        if (degree_difference > DEGREE_CHANGE_THRESHOLD) {
-            if (strcmp(direction, previousDirection) != 0) {
-                previousDirection = direction;
-                LiquidCrystal_I2C_SetCursor(&lcd2, 0, 2);
-                snprintf(buffer, sizeof(buffer), "Heading: %s          ", direction);
-                LiquidCrystal_I2C_Print(&lcd2, buffer);
-            }
-
-            previous_heading = heading;
-            LiquidCrystal_I2C_SetCursor(&lcd2, 0, 3);
-            snprintf(buffer, sizeof(buffer), "Angle: %.f%c    ", heading, 223); //223 is char for degrees
-            LiquidCrystal_I2C_Print(&lcd2, buffer);
-        }
         HAL_Delay(100);
     }
 }
@@ -185,8 +122,53 @@ void Error_Handler(char *errorMessage, int lcdNumber) {
     NVIC_SystemReset();
 }
 
+void setUp(void) {
+
+    // Initialize LCD1 at 0x27
+    LiquidCrystal_I2C_Init(&lcd, &i2c, 0x27, 20, 4);
+    LiquidCrystal_I2C_Begin(&lcd, 20, 4, LCD_5x8DOTS);
+
+    // Initialize LCD2 at 0x20
+    LiquidCrystal_I2C_Init(&lcd2, &i2c, 0x20, 20, 4);
+    LiquidCrystal_I2C_Begin(&lcd2, 20, 4, LCD_5x8DOTS);
+
+    // Initialize BNO055
+    bno055_setup();
+    hardcodeCalibrationData();
+    bno055_setOperationModeNDOF();
+
+    LiquidCrystal_I2C_SetCursor(&lcd, 0, 0);
+    LiquidCrystal_I2C_SetCursor(&lcd2, 0, 0);
+    LiquidCrystal_I2C_Print(&lcd, "Getting Ready...");
+    LiquidCrystal_I2C_Print(&lcd2, "Getting Ready...");
+
+    while (stabilize_counter < 8) {
+        stabilize_counter++;
+        HAL_Delay(500);
+    }
+
+    // Stable Initial Values
+    accel = bno055_getVectorAccelerometer();
+    mag = bno055_getVectorMagnetometer();
+    gyro = bno055_getVectorGyroscope();
+    euler = bno055_getVectorEuler();
+    linear_accel = bno055_getVectorLinearAccel();
+    gravity = bno055_getVectorGravity();
+    temp_raw = bno055_getTemp();
+
+    // Set prev values
+    prev_euler = euler;
+    prev_gravity = gravity;
+    prev_linear_accel = accel;
+
+    LiquidCrystal_I2C_Clear(&lcd);
+    LiquidCrystal_I2C_Clear(&lcd2);
+    LiquidCrystal_I2C_SetCursor(&lcd, 0, 0);
+    LiquidCrystal_I2C_Print(&lcd, "Movement:           ");
+}
+
 // Data after calibrating the IMU in current environment
-// bno055Calibrate.c can be used to retrieve new calibration
+// "bno055Calibrate.c" can be used to retrieve new calibration
 void hardcodeCalibrationData() {
     bno055_calibration_data_t calData;
 
@@ -205,12 +187,69 @@ void hardcodeCalibrationData() {
     bno055_setCalibrationData(calData);
 }
 
-// From Celsius to Fahrenheit
+void displaySpeed(LiquidCrystal_I2C_HandleTypeDef *lcd2, bno055_vector_t linear_accel, float *displayed_acceleration, char *buffer) {
+    // If acceleration change is greater than threshold then display it
+    if (fabs(linear_accel.y) > ACCEL_CHANGE_THRESHOLD) {
+        *displayed_acceleration = fabs(linear_accel.y);
+    } else {
+        // Slow down rate
+        *displayed_acceleration *= DECAY_FACTOR;
+        if (*displayed_acceleration < 0.3) {
+            *displayed_acceleration = 0.0;
+        }
+    }
+
+    // Display
+    LiquidCrystal_I2C_SetCursor(lcd2, 0, 0);
+    snprintf(buffer, 20, "Speed: %.1f", *displayed_acceleration);
+    LiquidCrystal_I2C_Print(lcd2, buffer);
+}
+
+void displayTemperature(LiquidCrystal_I2C_HandleTypeDef *lcd2, int8_t temp_raw, float *prev_temperature_f, char *buffer) {
+    // Convert Temperature from C to F
+    float temperature_f = convertToFahrenheit(temp_raw);
+
+    // Update temperature if change is greater than threshold
+    if (fabs(temperature_f - *prev_temperature_f) > TEMP_CHANGE_THRESHOLD) {
+        *prev_temperature_f = temperature_f;
+        LiquidCrystal_I2C_SetCursor(lcd2, 0, 1);
+        snprintf(buffer, 20, "Temp: %.1f %cF", temperature_f, 223); // 223 is char for degrees
+        LiquidCrystal_I2C_Print(lcd2, buffer);
+    }
+}
+
 float convertToFahrenheit(int8_t temp_c) {
     return (temp_c * 9.0 / 5.0) + 32.0;
 }
 
-// Retrieve Direction
+void displayHeadingAndAngle(LiquidCrystal_I2C_HandleTypeDef *lcd2, bno055_vector_t mag, float *previous_heading, const char **previousDirection, char *buffer) {
+    float heading = calculateHeading(mag);
+    const char* direction = getCompassDirection(heading);
+
+    // Calculate the degree difference
+    float degree_difference = fabs(heading - *previous_heading);
+
+    // Angle wrap around check
+    if (degree_difference > 180.0) {
+        degree_difference = 360.0 - degree_difference;
+    }
+
+    // Update direction and angle if degree difference is greater than threshold
+    if (degree_difference > DEGREE_CHANGE_THRESHOLD) {
+        if (strcmp(direction, *previousDirection) != 0) {
+            *previousDirection = direction;
+            LiquidCrystal_I2C_SetCursor(lcd2, 0, 2);
+            snprintf(buffer, 20, "Heading: %s          ", direction);
+            LiquidCrystal_I2C_Print(lcd2, buffer);
+        }
+
+        *previous_heading = heading;
+        LiquidCrystal_I2C_SetCursor(lcd2, 0, 3);
+        snprintf(buffer, 20, "Angle: %.f%c    ", heading, 223); // 223 is char for degrees
+        LiquidCrystal_I2C_Print(lcd2, buffer);
+    }
+}
+
 const char* getCompassDirection(float heading) {
     if ((heading >= 337.5) || (heading < 22.5)) {
         return "*North*";
@@ -242,11 +281,11 @@ float calculateHeading(bno055_vector_t mag) {
 }
 
 // Movement Status - idle, slightly moving, moving, walking
-void userMovementStatus(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity,
+void displayMovement(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity,
                         bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gyro) {
 
     // Check if the user is walking
-    if (isUserWalking(linear_accel, prev_linear_accel)) {
+	if (isUserWalking(linear_accel, prev_linear_accel, gravity, prev_gravity)) {
         walkingDebounceCounter++;
         idleDebounceCounter = 0;
         slightlyMovingDebounceCounter = 0;
@@ -286,7 +325,7 @@ void userMovementStatus(bno055_vector_t euler, bno055_vector_t prev_euler, bno05
         walkingDebounceCounter = 0;
         if (idleDebounceCounter >= IDLE_DEBOUNCE_THRESHOLD) {
             LiquidCrystal_I2C_SetCursor(&lcd, 10, 0);
-            LiquidCrystal_I2C_Print(&lcd, "Idle      ");
+            LiquidCrystal_I2C_Print(&lcd, "Full Idle      ");
         }
     }
 }
@@ -300,12 +339,8 @@ int isUserIdle(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_
     float gravity_change_y = fabs(gravity.y - prev_gravity.y);
     float gravity_change_z = fabs(gravity.z - prev_gravity.z);
 
-    return (euler_change_x < IDLE_EULER_CHANGE_THRESHOLD &&
-            euler_change_y < IDLE_EULER_CHANGE_THRESHOLD &&
-            euler_change_z < IDLE_EULER_CHANGE_THRESHOLD &&
-            gravity_change_x < IDLE_GRAVITY_CHANGE_THRESHOLD &&
-            gravity_change_y < IDLE_GRAVITY_CHANGE_THRESHOLD &&
-            gravity_change_z < IDLE_GRAVITY_CHANGE_THRESHOLD);
+    return (euler_change_x < IDLE_EULER_CHANGE_THRESHOLD || euler_change_y < IDLE_EULER_CHANGE_THRESHOLD || euler_change_z < IDLE_EULER_CHANGE_THRESHOLD ||
+            gravity_change_x < IDLE_GRAVITY_CHANGE_THRESHOLD || gravity_change_y < IDLE_GRAVITY_CHANGE_THRESHOLD || gravity_change_z < IDLE_GRAVITY_CHANGE_THRESHOLD);
 }
 
 // Check if user is slightly moving using euler
@@ -314,41 +349,33 @@ int isUserSlightlyMoving(bno055_vector_t euler, bno055_vector_t prev_euler) {
     float euler_change_y = fabs(euler.y - prev_euler.y);
     float euler_change_z = fabs(euler.z - prev_euler.z);
 
-    return (euler_change_x >= SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD ||
-            euler_change_y >= SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD ||
-            euler_change_z >= SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD);
+    return (euler_change_x >= SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD || euler_change_y >= SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD || euler_change_z >= SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD);
 }
 
-// Check if user is moving using euler, gravity, and gyro
+// Check if user is moving using euler, gravity, gyro
 int isUserMoving(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity, bno055_vector_t gyro) {
     float euler_change_x = fabs(euler.x - prev_euler.x);
     float euler_change_y = fabs(euler.y - prev_euler.y);
     float euler_change_z = fabs(euler.z - prev_euler.z);
-    float gravity_change_x = fabs(gravity.x - prev_gravity.x);
-    float gravity_change_y = fabs(gravity.y - prev_gravity.y);
     float gravity_change_z = fabs(gravity.z - prev_gravity.z);
 
     // Magnitude of 3D angular velocity vector: |gyro| = √(gyro.x^2 + gyro.y^2 + gyro.z^2)
+    // Measure rate of rotation in 3D space to see if user is moving
     float gyro_magnitude = sqrt((gyro.x * gyro.x) + (gyro.y * gyro.y) + (gyro.z * gyro.z));
 
-    return (euler_change_x >= MOVING_EULER_CHANGE_THRESHOLD ||
-            euler_change_y >= MOVING_EULER_CHANGE_THRESHOLD ||
-            euler_change_z >= MOVING_EULER_CHANGE_THRESHOLD ||
-            gravity_change_x >= MOVING_GRAVITY_CHANGE_THRESHOLD ||
-            gravity_change_y >= MOVING_GRAVITY_CHANGE_THRESHOLD ||
-            gravity_change_z >= MOVING_GRAVITY_CHANGE_THRESHOLD ||
-            gyro_magnitude > MOVING_GRAVITY_CHANGE_THRESHOLD);
+    return (
+        ((euler_change_x >= MOVING_EULER_CHANGE_THRESHOLD) || (euler_change_y >= MOVING_EULER_CHANGE_THRESHOLD) || (euler_change_z >= MOVING_EULER_CHANGE_THRESHOLD)) &&
+        (gravity_change_z >= MOVING_GRAVITY_CHANGE_THRESHOLD) && (gyro_magnitude >  MOVING_GYRO_CHANGE_THRESHOLD));
 }
 
-// Check if user is walking using magnitude of 2d vector
-int isUserWalking(bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel) {
+// Check if user is walking using lin accel, and gravity
+int isUserWalking(bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gravity, bno055_vector_t prev_gravity) {
     float accel_change_x = fabs(linear_accel.x - prev_linear_accel.x);
-    float accel_change_y = fabs(linear_accel.y - prev_linear_accel.y);
+    float gravity_change_x = fabs(gravity.x - prev_gravity.x);
+    float gravity_change_z = fabs(gravity.z - prev_gravity.z);
 
-    // Magnitude of 2d vector : |a| = √(accel_changeX^2 + accel_changeY^2)
-    float accel_change_magnitude = sqrt((accel_change_x * accel_change_x) + (accel_change_y * accel_change_y));
-
-    return (accel_change_magnitude >= WALKING_ACCEL_CHANGE_THRESHOLD);
+    return (gravity_change_x >= WALKING_GRAVITY_X_CHANGE_THRESHOLD && gravity_change_z >= WALKING_GRAVITY_Z_CHANGE_THRESHOLD
+    		&& accel_change_x >= WALKING_ACCEL_X_CHANGE_THRESHOLD);
 }
 
 // I2C Configuration
