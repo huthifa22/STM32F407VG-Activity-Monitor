@@ -29,7 +29,8 @@ https://www.amazon.com/GeeekPi-Interface-Backlight-Raspberry-Electrical/dp/B0BCW
 - BNO055 IMU Sensor (0x28) : Connected via I2C1
 
 # Circuit Diagram
-![Circuit Diagram](https://github.com/huthifa22/STM32F407VG-Activity-Monitor/assets/105901978/b32b625e-76dd-4d85-837b-af817895cb16)
+
+![Circuit Diagram](https://github.com/huthifa22/STM32F407VG-Activity-Monitor/assets/105901978/05a5a8cb-4cca-493c-a396-0c8077aa24bf)
 
 ![SC1](https://github.com/huthifa22/STM32F407VG-Activity-Monitor/assets/105901978/afffdd73-1f6f-4637-aa46-a9d8acf6c655)
 
