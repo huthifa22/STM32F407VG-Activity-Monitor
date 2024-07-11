@@ -7,7 +7,7 @@
 
 #define TEMP_CHANGE_THRESHOLD 0.1
 #define DEGREE_CHANGE_THRESHOLD 0
-#define ACCEL_CHANGE_THRESHOLD 0.06
+#define ACCEL_CHANGE_THRESHOLD 0.04
 #define DECAY_FACTOR 0.7
 
 #define IDLE_EULER_CHANGE_THRESHOLD 0.06
@@ -190,20 +190,22 @@ void hardcodeCalibrationData() {
 }
 
 void displaySpeed(LiquidCrystal_I2C_HandleTypeDef *lcd2, bno055_vector_t linear_accel, float *displayed_acceleration, char *buffer) {
-    // If acceleration change is greater than threshold then display it
-    if (fabs(linear_accel.y) > ACCEL_CHANGE_THRESHOLD) {
-        *displayed_acceleration = fabs(linear_accel.y);
+    // Check if the user is idle
+    if (isUserIdle(euler, prev_euler, gravity, prev_gravity)) {
+        *displayed_acceleration = 0.0;
     } else {
-        // Slow down rate
-        *displayed_acceleration *= DECAY_FACTOR;
-        if (*displayed_acceleration < 0.3) {
-            *displayed_acceleration = 0.0;
+        // If acceleration change is greater than threshold then display it
+        if (fabs(linear_accel.y) > ACCEL_CHANGE_THRESHOLD) {
+            *displayed_acceleration = fabs(linear_accel.y);
+        } else {
+            // Slow down rate
+            *displayed_acceleration *= DECAY_FACTOR;
         }
     }
 
     // Display
     LiquidCrystal_I2C_SetCursor(lcd2, 0, 0);
-    snprintf(buffer, 20, "Speed: %.1f", *displayed_acceleration);
+    snprintf(buffer, 20, "Speed: %.2f", *displayed_acceleration);
     LiquidCrystal_I2C_Print(lcd2, buffer);
 }
 
@@ -364,8 +366,8 @@ int isUserIdle(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_
     float gravity_change_y = fabs(gravity.y - prev_gravity.y);
     float gravity_change_z = fabs(gravity.z - prev_gravity.z);
 
-    return (euler_change_x < IDLE_EULER_CHANGE_THRESHOLD || euler_change_y < IDLE_EULER_CHANGE_THRESHOLD || euler_change_z < IDLE_EULER_CHANGE_THRESHOLD ||
-            gravity_change_x < IDLE_GRAVITY_CHANGE_THRESHOLD || gravity_change_y < IDLE_GRAVITY_CHANGE_THRESHOLD || gravity_change_z < IDLE_GRAVITY_CHANGE_THRESHOLD);
+    return (euler_change_x < IDLE_EULER_CHANGE_THRESHOLD && euler_change_y < IDLE_EULER_CHANGE_THRESHOLD && euler_change_z < IDLE_EULER_CHANGE_THRESHOLD &&
+            gravity_change_x < IDLE_GRAVITY_CHANGE_THRESHOLD && gravity_change_y < IDLE_GRAVITY_CHANGE_THRESHOLD && gravity_change_z < IDLE_GRAVITY_CHANGE_THRESHOLD);
 }
 
 // Check if user is slightly moving using euler
