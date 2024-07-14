@@ -10,21 +10,20 @@
 #define ACCEL_CHANGE_THRESHOLD 0.04
 #define DECAY_FACTOR 0.7
 
-#define IDLE_EULER_CHANGE_THRESHOLD 0.06
-#define IDLE_GRAVITY_CHANGE_THRESHOLD 0.06
-#define IDLE_DEBOUNCE_THRESHOLD 1
+#define IDLE_EULER_CHANGE_THRESHOLD 0.03
+#define IDLE_GRAVITY_CHANGE_THRESHOLD 0.02
+#define IDLE_DEBOUNCE_THRESHOLD 0
 
-#define SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD 0.08
+#define SLIGHTLY_MOVING_EULER_CHANGE_THRESHOLD 0.04
 #define SLIGHTLY_MOVING_DEBOUNCE_THRESHOLD 1
 
-#define MOVING_EULER_CHANGE_THRESHOLD 0.3
-#define MOVING_GRAVITY_CHANGE_THRESHOLD 0.2
-#define MOVING_GYRO_CHANGE_THRESHOLD 0.2
-#define MOVING_DEBOUNCE_THRESHOLD 1
+#define MOVING_EULER_CHANGE_THRESHOLD 0.05
+#define MOVING_GRAVITY_CHANGE_THRESHOLD 0.015
+#define MOVING_GYRO_CHANGE_THRESHOLD 0.01
+#define MOVING_DEBOUNCE_THRESHOLD 2
 
-#define WALKING_ACCEL_X_CHANGE_THRESHOLD 0.5
-#define WALKING_GRAVITY_X_CHANGE_THRESHOLD 0.3
-#define WALKING_GRAVITY_Z_CHANGE_THRESHOLD 0.2
+#define WALKING_ACCEL_Y_CHANGE_THRESHOLD 0.38
+#define WALKING_GRAVITY_Z_CHANGE_THRESHOLD 0.01
 #define WALKING_DEBOUNCE_THRESHOLD 1
 
 int stabilize_counter;
@@ -58,7 +57,7 @@ void displayMovement(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_v
 int isUserIdle(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity);
 int isUserSlightlyMoving(bno055_vector_t euler, bno055_vector_t prev_euler);
 int isUserMoving(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vector_t gravity, bno055_vector_t prev_gravity, bno055_vector_t gyro);
-int isUserWalking(bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gravity, bno055_vector_t prev_gravity);
+int isUserWalking(bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel,  bno055_vector_t gravity, bno055_vector_t prev_gravity);
 
 I2C_HandleTypeDef i2c;
 LiquidCrystal_I2C_HandleTypeDef lcd, lcd2;
@@ -106,7 +105,7 @@ int main(void) {
         prev_gravity = gravity;
         prev_linear_accel = linear_accel;
 
-        HAL_Delay(100);
+        HAL_Delay(200);
     }
 }
 
@@ -174,17 +173,17 @@ void setUp(void) {
 void hardcodeCalibrationData() {
     bno055_calibration_data_t calData;
 
-    calData.offset.accel.x = -29;
-    calData.offset.accel.y = -16;
-    calData.offset.accel.z = -31;
-    calData.offset.mag.x = 79;
-    calData.offset.mag.y = -150;
-    calData.offset.mag.z = 80;
-    calData.offset.gyro.x = -2;
+    calData.offset.accel.x = -34;
+    calData.offset.accel.y = 34;
+    calData.offset.accel.z = -28;
+    calData.offset.mag.x = 50;
+    calData.offset.mag.y = -140;
+    calData.offset.mag.z = 96;
+    calData.offset.gyro.x = -3;
     calData.offset.gyro.y = 0;
     calData.offset.gyro.z = 0;
     calData.radius.accel = 1000;
-    calData.radius.mag = 814;
+    calData.radius.mag = 777;
 
     bno055_setCalibrationData(calData);
 }
@@ -384,7 +383,8 @@ int isUserMoving(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vecto
     float euler_change_x = fabs(euler.x - prev_euler.x);
     float euler_change_y = fabs(euler.y - prev_euler.y);
     float euler_change_z = fabs(euler.z - prev_euler.z);
-    float gravity_change_z = fabs(gravity.z - prev_gravity.z);
+    float gravity_change_x = fabs(gravity.x - prev_gravity.x);
+    float gravity_change_y = fabs(gravity.y - prev_gravity.y);
 
     // Magnitude of 3D angular velocity vector: |gyro| = √(gyro.x^2 + gyro.y^2 + gyro.z^2)
     // Measure rate of rotation in 3D space to see if user is moving
@@ -392,17 +392,16 @@ int isUserMoving(bno055_vector_t euler, bno055_vector_t prev_euler, bno055_vecto
 
     return (
         ((euler_change_x >= MOVING_EULER_CHANGE_THRESHOLD) || (euler_change_y >= MOVING_EULER_CHANGE_THRESHOLD) || (euler_change_z >= MOVING_EULER_CHANGE_THRESHOLD)) &&
-        (gravity_change_z >= MOVING_GRAVITY_CHANGE_THRESHOLD) && (gyro_magnitude >  MOVING_GYRO_CHANGE_THRESHOLD));
+        ((gravity_change_x >= MOVING_GRAVITY_CHANGE_THRESHOLD) || (gravity_change_y >= MOVING_GRAVITY_CHANGE_THRESHOLD)) &&
+        (gyro_magnitude > MOVING_GYRO_CHANGE_THRESHOLD));
 }
 
 // Check if user is walking using lin accel, and gravity
-int isUserWalking(bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gravity, bno055_vector_t prev_gravity) {
-    float accel_change_x = fabs(linear_accel.x - prev_linear_accel.x);
-    float gravity_change_x = fabs(gravity.x - prev_gravity.x);
+int isUserWalking(bno055_vector_t linear_accel, bno055_vector_t prev_linear_accel, bno055_vector_t gravity,  bno055_vector_t prev_gravity) {
+    float accel_change_y = fabs(linear_accel.y - prev_linear_accel.y);
     float gravity_change_z = fabs(gravity.z - prev_gravity.z);
 
-    return (gravity_change_x >= WALKING_GRAVITY_X_CHANGE_THRESHOLD && gravity_change_z >= WALKING_GRAVITY_Z_CHANGE_THRESHOLD
-    		&& accel_change_x >= WALKING_ACCEL_X_CHANGE_THRESHOLD);
+    return (accel_change_y >= WALKING_ACCEL_Y_CHANGE_THRESHOLD  && gravity_change_z >= WALKING_GRAVITY_Z_CHANGE_THRESHOLD);
 }
 
 // I2C Configuration
