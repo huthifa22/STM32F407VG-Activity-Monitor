@@ -4,6 +4,12 @@ This Project Implements an Activity Monitor application using an STM32F4 microco
 - LCD1: Shows the user's current activity status such as running, walking, or being idle.
 - LCD2: Displays other general information like current speed, compass direction, and temperature.
 
+https://github.com/user-attachments/assets/fb9f3885-0367-452f-aa51-0d4b1db50f0d
+
+# Circuit Diagram
+
+![Circuit Diagram](https://github.com/huthifa22/STM32F407VG-Activity-Monitor/assets/105901978/05a5a8cb-4cca-493c-a396-0c8077aa24bf)
+
 # Software 
 
 - STM32CubeIDE
@@ -27,13 +33,11 @@ This Project Implements an Activity Monitor application using an STM32F4 microco
 - LCD2 (0x20): Connected via I2C1
 - BNO055 IMU Sensor (0x28) : Connected via I2C1
 
-# Circuit Diagram
-
-![Circuit Diagram](https://github.com/huthifa22/STM32F407VG-Activity-Monitor/assets/105901978/05a5a8cb-4cca-493c-a396-0c8077aa24bf)
 
 
 
-https://github.com/user-attachments/assets/fb9f3885-0367-452f-aa51-0d4b1db50f0d
+
+
 
 
 
